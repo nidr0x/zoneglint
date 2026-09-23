@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            extension: ""
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            extension: ""
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            extension: ""
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            extension: .exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+      - run: cargo build --locked --release --target "${{ matrix.target }}"
+      - name: Stage release binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/zoneglint${{ matrix.extension }}" \
+            "dist/zoneglint-${{ matrix.target }}${{ matrix.extension }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zoneglint-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: zoneglint-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
